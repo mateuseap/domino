@@ -36,6 +36,11 @@ class DominoGame:
 
     def add_player(self, player_id: str, name: str) -> bool:
         """Adiciona um jogador à sala"""
+        # Se o jogador já existe, apenas atualiza o nome (reconexão)
+        if player_id in self.players:
+            self.players[player_id]["name"] = name
+            return True
+            
         if len(self.players) >= 2:
             return False
 
@@ -95,50 +100,52 @@ class DominoGame:
 
         return False, None
 
-    def play_piece(self, player_id: str, piece_left: int, piece_right: int) -> Dict:
-        """Executa a jogada de uma peça"""
+    def play_piece(self, player_id: str, piece_left: int, piece_right: int, side: str = 'right') -> Dict:
+        """Executa a jogada de uma peça no lado especificado"""
         if not self.game_started or self.game_finished:
             return {"success": False, "message": "Jogo não está em andamento"}
-
+        
         if self.get_current_player_id() != player_id:
             return {"success": False, "message": "Não é seu turno"}
-
-        # Encontra a peça na mão do jogador
+        
         piece = None
         for p in self.players[player_id]["hand"]:
             if (p.left == piece_left and p.right == piece_right) or \
-               (p.left == piece_right and p.right == piece_left):
+            (p.left == piece_right and p.right == piece_left):
                 piece = p
                 break
-
+        
         if not piece:
             return {"success": False, "message": "Peça não encontrada na sua mão"}
-
-        can_play, position = self.can_play_piece(piece)
-
+        
+        can_play, _ = self.can_play_piece(piece)
+        
         if not can_play:
             return {"success": False, "message": "Essa peça não pode ser jogada"}
-
-        # Remove a peça da mão do jogador
+        
         self.players[player_id]["hand"].remove(piece)
-
-        # Adiciona ao tabuleiro
-        if position == "start":
+        
+        if len(self.board) == 0:
             self.board.append(piece)
-        elif position == "right":
-            if piece.left == self.board[-1].right:
-                self.board.append(piece)
-            else:
-                piece.flip()
-                self.board.append(piece)
-        else:  # left
-            if piece.right == self.board[0].left:
+        elif side == 'left':
+            left_end = self.board[0].left
+            if piece.right == left_end:
                 self.board.insert(0, piece)
-            else:
+            elif piece.left == left_end:
                 piece.flip()
                 self.board.insert(0, piece)
-
-        # Verifica vitória
+            else:
+                return {"success": False, "message": "Peça não encaixa neste lado"}
+        else:  # right
+            right_end = self.board[-1].right
+            if piece.left == right_end:
+                self.board.append(piece)
+            elif piece.right == right_end:
+                piece.flip()
+                self.board.append(piece)
+            else:
+                return {"success": False, "message": "Peça não encaixa neste lado"}
+        
         if len(self.players[player_id]["hand"]) == 0:
             self.game_finished = True
             self.winner = player_id
@@ -148,10 +155,9 @@ class DominoGame:
                 "game_finished": True,
                 "winner": self.players[player_id]["name"]
             }
-
-        # Próximo jogador
+        
         self.current_player_index = (self.current_player_index + 1) % 2
-
+        
         return {"success": True, "message": "Jogada realizada com sucesso"}
 
     def buy_piece(self, player_id: str) -> Dict:
