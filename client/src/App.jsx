@@ -3,6 +3,36 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
+const DominoDots = ({ value }) => {
+  const dotPatterns = {
+    0: [],
+    1: [[1, 1]],
+    2: [[0, 0], [2, 2]],
+    3: [[0, 0], [1, 1], [2, 2]],
+    4: [[0, 0], [0, 2], [2, 0], [2, 2]],
+    5: [[0, 0], [0, 2], [1, 1], [2, 0], [2, 2]],
+    6: [[0, 0], [0, 2], [1, 0], [1, 2], [2, 0], [2, 2]]
+  };
+
+  const dots = dotPatterns[value] || [];
+
+  return (
+    <div className="grid grid-cols-3 gap-1 p-2 w-12">
+      {[0, 1, 2].map(row => (
+        [0, 1, 2].map(col => {
+          const hasDot = dots.some(([r, c]) => r === row && c === col);
+          return (
+            <div
+              key={`${row}-${col}`}
+              className={`w-2 h-2 rounded-full ${hasDot ? 'bg-gray-800' : 'bg-transparent'}`}
+            />
+          );
+        })
+      ))}
+    </div>
+  );
+};
+
 function App() {
   const [socket, setSocket] = useState(null);
   const [gameState, setGameState] = useState('menu'); // menu, waiting, playing, finished
@@ -15,6 +45,8 @@ function App() {
   const [message, setMessage] = useState('');
   const [winner, setWinner] = useState(null);
   const [poolCount, setPoolCount] = useState(0);
+  const [selectedPiece, setSelectedPiece] = useState(null);
+  const [showSideChoice, setShowSideChoice] = useState(false);
 
   useEffect(() => {
     const newSocket = io(API_URL);
@@ -71,7 +103,10 @@ function App() {
 
     newSocket.on('player_left', (data) => {
       setMessage(data.message);
-      setGameState('menu');
+      // Só volta ao menu se o jogo não estiver em andamento
+      if (gameState !== 'playing') {
+        setGameState('menu');
+      }
     });
 
     newSocket.on('error', (data) => {
@@ -97,17 +132,61 @@ function App() {
     socket.emit('join_room', { room_code: roomCode.toUpperCase(), name: playerName });
   };
 
-  const playPiece = (piece) => {
+  const playPiece = (piece, side) => {
     socket.emit('play_piece', {
       room_code: roomCode,
       left: piece.left,
-      right: piece.right
+      right: piece.right,
+      side: side // 'left' ou 'right'
     });
+    setSelectedPiece(null);
+    setShowSideChoice(false);
   };
 
-  const buyPiece = () => {
+  const selectPiece = (piece) => {
+    if (board.length === 0) {
+      playPiece(piece, 'right');
+      return;
+    }
+    
+    const leftEnd = board[0].left;
+    const rightEnd = board[board.length - 1].right;
+    const canLeft = piece.left === leftEnd || piece.right === leftEnd;
+    const canRight = piece.left === rightEnd || piece.right === rightEnd;
+    
+    if (canLeft && canRight) {
+      setSelectedPiece(piece);
+      setShowSideChoice(true);
+    } else if (canLeft) {
+      playPiece(piece, 'left');
+    } else if (canRight) {
+      playPiece(piece, 'right');
+    }
+  };
+
+  const canPlayPiece = (piece) => {
+    if (board.length === 0) return true;
+    const leftEnd = board[0].left;
+    const rightEnd = board[board.length - 1].right;
+    return piece.left === leftEnd || piece.right === leftEnd || 
+          piece.left === rightEnd || piece.right === rightEnd;
+  };
+
+  const buyFromPool = () => {
     socket.emit('buy_piece', { room_code: roomCode });
   };
+
+  // useEffect para compra automática quando não pode jogar
+  useEffect(() => {
+    if (socket && isMyTurn() && gameState === 'playing' && board.length > 0) {
+      const canPlay = myHand.some(piece => canPlayPiece(piece));
+      
+      if (!canPlay && poolCount > 0) {
+        const timer = setTimeout(() => buyFromPool(), 1000);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [myHand, currentPlayer, poolCount, gameState, socket]);
 
   const isMyTurn = () => {
     return currentPlayer === socket?.id;
@@ -209,21 +288,22 @@ function App() {
   }
 
   // Componente de Peça de Dominó
-  const DominoPiece = ({ piece, onClick, disabled, small }) => {
-    const sizeClass = small ? 'w-12 h-24' : 'w-16 h-32';
-    const textSize = small ? 'text-lg' : 'text-2xl';
+  const DominoPiece = ({ piece, onClick, disabled, isHorizontal = true }) => {
+    const containerClass = isHorizontal 
+      ? 'w-20 h-10 flex-row' 
+      : 'w-10 h-20 flex-col';
     
     return (
       <button
         onClick={() => onClick && onClick(piece)}
         disabled={disabled}
-        className={`${sizeClass} bg-white border-4 border-gray-800 rounded-lg flex flex-col items-center justify-around p-1 ${
-          disabled ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 hover:shadow-lg cursor-pointer'
-        } transition-all`}
+        className={`${containerClass} bg-white border-4 border-gray-800 rounded-lg flex items-center justify-around p-1 ${
+          disabled ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 hover:shadow-xl cursor-pointer transform transition-all'
+        }`}
       >
-        <span className={`${textSize} font-bold`}>{piece.left}</span>
-        <div className="w-full h-0.5 bg-gray-800"></div>
-        <span className={`${textSize} font-bold`}>{piece.right}</span>
+        <DominoDots value={piece.left} />
+        <div className={isHorizontal ? 'w-0.5 h-full bg-gray-800' : 'h-0.5 w-full bg-gray-800'}></div>
+        <DominoDots value={piece.right} />
       </button>
     );
   };
@@ -271,7 +351,7 @@ function App() {
           </div>
 
           {/* Tabuleiro */}
-          <div className="bg-green-800 rounded-lg shadow-lg p-6 mb-4 min-h-[200px]">
+          <div className="bg-green-800 rounded-lg shadow-lg p-6 mb-4 overflow-x-auto">
             <h3 className="text-white text-lg font-bold mb-4">Tabuleiro</h3>
             
             {board.length === 0 ? (
@@ -279,9 +359,9 @@ function App() {
                 <p className="text-white text-lg">Jogue a primeira peça!</p>
               </div>
             ) : (
-              <div className="flex flex-wrap gap-2 justify-center">
+              <div className="flex flex-wrap items-center gap-0 justify-center min-h-[100px]">
                 {board.map((piece, idx) => (
-                  <DominoPiece key={idx} piece={piece} disabled small />
+                  <DominoPiece key={idx} piece={piece} disabled isHorizontal={true} />
                 ))}
               </div>
             )}
@@ -296,8 +376,8 @@ function App() {
                 <DominoPiece
                   key={idx}
                   piece={piece}
-                  onClick={playPiece}
-                  disabled={!isMyTurn() || gameState === 'finished'}
+                  onClick={selectPiece}
+                  disabled={!isMyTurn() || gameState === 'finished' || !canPlayPiece(piece)}
                 />
               ))}
             </div>
@@ -305,7 +385,7 @@ function App() {
             {isMyTurn() && gameState !== 'finished' && (
               <div className="text-center">
                 <button
-                  onClick={buyPiece}
+                  onClick={buyFromPool}
                   className="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-6 rounded-lg transition"
                   disabled={poolCount === 0}
                 >
@@ -314,6 +394,41 @@ function App() {
               </div>
             )}
           </div>
+
+          {/* Modal de escolha de lado */}
+          {showSideChoice && selectedPiece && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-6 max-w-md">
+                <h3 className="text-xl font-bold mb-4">Escolha o lado para jogar:</h3>
+                <div className="flex gap-4 mb-4">
+                  <DominoPiece piece={selectedPiece} disabled />
+                </div>
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => playPiece(selectedPiece, 'left')}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg"
+                  >
+                    ⬅️ Lado Esquerdo
+                  </button>
+                  <button
+                    onClick={() => playPiece(selectedPiece, 'right')}
+                    className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg"
+                  >
+                    Lado Direito ➡️
+                  </button>
+                </div>
+                <button
+                  onClick={() => {
+                    setSelectedPiece(null);
+                    setShowSideChoice(false);
+                  }}
+                  className="w-full mt-2 text-gray-600 hover:text-gray-800"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
