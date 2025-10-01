@@ -178,15 +178,27 @@ function App() {
 
   // useEffect para compra automática quando não pode jogar
   useEffect(() => {
-    if (socket && isMyTurn() && gameState === 'playing' && board.length > 0) {
+    if (socket && isMyTurn() && gameState === 'playing') {
+      // Se o tabuleiro está vazio, pode jogar qualquer peça
+      if (board.length === 0) return;
+      
       const canPlay = myHand.some(piece => canPlayPiece(piece));
       
-      if (!canPlay && poolCount > 0) {
-        const timer = setTimeout(() => buyFromPool(), 1000);
-        return () => clearTimeout(timer);
+      if (!canPlay) {
+        if (poolCount > 0) {
+          // Compra automaticamente se não pode jogar e há peças no pool
+          const timer = setTimeout(() => buyFromPool(), 800);
+          return () => clearTimeout(timer);
+        } else {
+          // Passa a vez automaticamente se não pode jogar e pool está vazio
+          const timer = setTimeout(() => {
+            socket.emit('pass_turn', { room_code: roomCode });
+          }, 1000);
+          return () => clearTimeout(timer);
+        }
       }
     }
-  }, [myHand, currentPlayer, poolCount, gameState, socket]);
+  }, [myHand, currentPlayer, poolCount, gameState, socket, roomCode, board]);
 
   const isMyTurn = () => {
     return currentPlayer === socket?.id;
@@ -319,7 +331,15 @@ function App() {
               <div>
                 <h2 className="text-2xl font-bold text-gray-800">Sala: {roomCode}</h2>
                 <p className="text-sm text-gray-600">
-                  {isMyTurn() ? '🟢 Seu turno!' : '🔴 Aguardando oponente...'}
+                  {isMyTurn() ? 
+                    (myHand.some(piece => canPlayPiece(piece)) ? 
+                      '🟢 Seu turno! Escolha uma peça para jogar' : 
+                      poolCount > 0 ? 
+                        '🔄 Comprando peças automaticamente...' : 
+                        '⏭️ Passando vez automaticamente...'
+                    ) : 
+                    '🔴 Aguardando oponente...'
+                  }
                 </p>
               </div>
               
@@ -382,17 +402,7 @@ function App() {
               ))}
             </div>
 
-            {isMyTurn() && gameState !== 'finished' && (
-              <div className="text-center">
-                <button
-                  onClick={buyFromPool}
-                  className="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-6 rounded-lg transition"
-                  disabled={poolCount === 0}
-                >
-                  {poolCount > 0 ? 'Comprar Peça do Pool' : 'Pool Vazio - Passar Vez'}
-                </button>
-              </div>
-            )}
+
           </div>
 
           {/* Modal de escolha de lado */}
