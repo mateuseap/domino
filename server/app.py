@@ -46,17 +46,20 @@ def handle_disconnect():
     # Remove jogador de qualquer sala
     for room_code, game in list(games.items()):
         if request.sid in game.players:
+            player_name = game.players[request.sid]['name']
             game.remove_player(request.sid)
             leave_room(room_code)
 
-            # Notifica outros jogadores
-            emit('player_left', {
-                'message': 'O outro jogador saiu da sala'
-            }, room=room_code)
-
+            # Só notifica se ainda há outros jogadores na sala
+            if len(game.players) > 0:
+                emit('player_left', {
+                    'message': f'{player_name} saiu da sala'
+                }, room=room_code)
+            
             # Remove sala se estiver vazia
             if len(game.players) == 0:
                 del games[room_code]
+                print(f'Sala {room_code} removida (vazia)')
 
 @socketio.on('create_room')
 def handle_create_room(data):
@@ -90,6 +93,23 @@ def handle_join_room(data):
 
     game = games[room_code]
 
+    # Verifica se o jogador já está na sala (reconexão)
+    if request.sid in game.players:
+        join_room(room_code)
+        emit('room_joined', {
+            'room_code': room_code,
+            'player_name': player_name,
+            'message': f'Reconectado à sala {room_code}'
+        })
+        
+        # Se o jogo já começou, envia o estado atual
+        if game.game_started:
+            game_state = game.get_game_state(request.sid)
+            emit('game_started', game_state)
+        
+        print(f'{player_name} se reconectou à sala {room_code}')
+        return
+
     if not game.add_player(request.sid, player_name):
         emit('error', {'message': 'Sala cheia (máximo 2 jogadores)'})
         return
@@ -119,32 +139,30 @@ def handle_join_room(data):
             game_state = game.get_game_state(player_id)
             emit('game_started', game_state, room=player_id)
 
-    print(f'{player_name} entrou na sala {room_code}')
+    print(f'{player_name} entrou na sala {room_code} (Total: {len(game.players)} jogadores)')
 
 @socketio.on('play_piece')
 def handle_play_piece(data):
-    """Jogador joga uma peça"""
     room_code = data.get('room_code')
     piece_left = data.get('left')
     piece_right = data.get('right')
-
+    side = data.get('side', 'right')  # 'left' ou 'right'
+    
     if room_code not in games:
         emit('error', {'message': 'Sala não encontrada'})
         return
-
+    
     game = games[room_code]
-    result = game.play_piece(request.sid, piece_left, piece_right)
-
+    result = game.play_piece(request.sid, piece_left, piece_right, side)
+    
     if not result['success']:
         emit('error', {'message': result['message']})
         return
-
-    # Atualiza estado para todos os jogadores
+    
     for player_id in game.players:
         game_state = game.get_game_state(player_id)
         emit('game_update', game_state, room=player_id)
-
-    # Se o jogo terminou, notifica
+    
     if result.get('game_finished'):
         emit('game_finished', {
             'winner': result['winner'],
