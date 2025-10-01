@@ -139,6 +139,13 @@ class DominoGame:
         if not piece:
             return {"success": False, "message": "Peça não encontrada na sua mão"}
         
+        # Se é a primeira jogada, deve ser a maior dupla
+        if len(self.board) == 0:
+            required_double = self.get_required_starting_double(player_id)
+            if required_double is not None:
+                if not (piece.left == piece.right and piece.left == required_double):
+                    return {"success": False, "message": f"Você deve jogar a dupla [{required_double}|{required_double}] como primeira peça"}
+        
         can_play, _ = self.can_play_piece(piece)
         
         if not can_play:
@@ -290,8 +297,11 @@ class DominoGame:
 
         # Encontra a maior dupla para mostrar no início do jogo
         starting_info = None
+        required_double = None
         if self.game_started and len(self.board) == 0:
             starting_info = self.get_starting_player_info()
+            if player_id == self.get_current_player_id():
+                required_double = self.get_required_starting_double(player_id)
 
         return {
             "room_code": self.room_code,
@@ -309,7 +319,8 @@ class DominoGame:
             "game_finished": self.game_finished,
             "winner": self.players[self.winner]["name"] if self.winner else None,
             "pool_count": len(self.dominoes_pool),
-            "starting_info": starting_info
+            "starting_info": starting_info,
+            "required_double": required_double
         }
 
     def get_starting_player_info(self) -> Optional[Dict]:
@@ -336,3 +347,15 @@ class DominoGame:
             "player_name": self.players[current_player_id]["name"],
             "message": f"{self.players[current_player_id]['name']} inicia o jogo"
         }
+
+    def get_required_starting_double(self, player_id: str) -> Optional[int]:
+        """Retorna a maior dupla que o jogador deve jogar como primeira peça"""
+        if len(self.board) > 0:  # Não é a primeira jogada
+            return None
+            
+        highest_double = -1
+        for piece in self.players[player_id]["hand"]:
+            if piece.left == piece.right and piece.left > highest_double:
+                highest_double = piece.left
+        
+        return highest_double if highest_double >= 0 else None
