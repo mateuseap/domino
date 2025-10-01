@@ -25,6 +25,7 @@ class DominoGame:
         self.game_finished = False
         self.winner = None
         self.dominoes_pool: List[DominoPiece] = []
+        self.consecutive_passes = 0
 
     def generate_dominoes(self) -> List[DominoPiece]:
         """Gera todas as 28 peças do dominó (0-0 até 6-6)"""
@@ -146,6 +147,9 @@ class DominoGame:
             else:
                 return {"success": False, "message": "Peça não encaixa neste lado"}
         
+        # Reset contador de passes consecutivos quando uma peça é jogada
+        self.consecutive_passes = 0
+        
         if len(self.players[player_id]["hand"]) == 0:
             self.game_finished = True
             self.winner = player_id
@@ -169,14 +173,95 @@ class DominoGame:
             return {"success": False, "message": "Não é seu turno"}
 
         if len(self.dominoes_pool) == 0:
-            # Passa a vez
-            self.current_player_index = (self.current_player_index + 1) % 2
-            return {"success": True, "message": "Pool vazio, vez passada", "piece": None}
+            return {"success": False, "message": "Pool vazio"}
 
         piece = self.dominoes_pool.pop()
         self.players[player_id]["hand"].append(piece)
 
+        # Verifica se agora pode jogar
+        can_play = any(self.can_play_piece(p)[0] for p in self.players[player_id]["hand"])
+        
+        if not can_play and len(self.dominoes_pool) == 0:
+            # Verifica se o jogo está bloqueado
+            blocked_result = self.check_game_blocked()
+            if blocked_result["blocked"]:
+                self.game_finished = True
+                self.winner = blocked_result["winner_id"]
+                return {
+                    "success": True, 
+                    "message": "Peça comprada", 
+                    "piece": piece.to_dict(),
+                    "game_blocked": True,
+                    "winner": blocked_result["winner_name"]
+                }
+
         return {"success": True, "message": "Peça comprada", "piece": piece.to_dict()}
+
+    def pass_turn(self, player_id: str) -> Dict:
+        """Jogador passa a vez"""
+        if not self.game_started or self.game_finished:
+            return {"success": False, "message": "Jogo não está em andamento"}
+
+        if self.get_current_player_id() != player_id:
+            return {"success": False, "message": "Não é seu turno"}
+
+        # Incrementa contador de passes consecutivos
+        self.consecutive_passes += 1
+        
+        # Passa a vez
+        self.current_player_index = (self.current_player_index + 1) % 2
+        
+        # Se ambos jogadores passaram consecutivamente, verifica se jogo está bloqueado
+        if self.consecutive_passes >= 2:
+            blocked_result = self.check_game_blocked()
+            if blocked_result["blocked"]:
+                self.game_finished = True
+                self.winner = blocked_result["winner_id"]
+                return {
+                    "success": True, 
+                    "message": "Vez passada",
+                    "game_blocked": True,
+                    "winner": blocked_result["winner_name"]
+                }
+
+        return {"success": True, "message": "Vez passada"}
+
+    def calculate_hand_points(self, player_id: str) -> int:
+        """Calcula os pontos na mão de um jogador"""
+        total = 0
+        for piece in self.players[player_id]["hand"]:
+            total += piece.left + piece.right
+        return total
+
+    def check_game_blocked(self) -> Dict:
+        """Verifica se o jogo está bloqueado (ninguém pode jogar)"""
+        if len(self.dominoes_pool) > 0:
+            return {"blocked": False}
+            
+        # Verifica se algum jogador pode jogar
+        for player_id in self.players:
+            for piece in self.players[player_id]["hand"]:
+                if self.can_play_piece(piece)[0]:
+                    return {"blocked": False}
+        
+        # Jogo bloqueado - encontra vencedor pela menor pontuação
+        min_points = float('inf')
+        winner_id = None
+        winner_name = None
+        
+        for player_id in self.players:
+            points = self.calculate_hand_points(player_id)
+            if points < min_points:
+                min_points = points
+                winner_id = player_id
+                winner_name = self.players[player_id]["name"]
+        
+        return {
+            "blocked": True, 
+            "winner_id": winner_id, 
+            "winner_name": winner_name,
+            "points": min_points
+        }
 
     def get_game_state(self, player_id: str) -> Dict:
         """Retorna o estado do jogo para um jogador específico"""
