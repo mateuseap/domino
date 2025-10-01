@@ -74,10 +74,30 @@ class DominoGame:
         # Peças restantes ficam no pool
         self.dominoes_pool = all_dominoes[14:]
 
+        # Determina quem começa baseado na maior peça dupla
+        starting_player_index = self.determine_starting_player()
+        self.current_player_index = starting_player_index
+
         self.game_started = True
-        self.current_player_index = 0
 
         return True
+
+    def determine_starting_player(self) -> int:
+        """Determina qual jogador deve começar baseado na maior peça dupla"""
+        player_ids = list(self.players.keys())
+        highest_double = -1
+        starting_player_index = 0
+        
+        for i, player_id in enumerate(player_ids):
+            for piece in self.players[player_id]["hand"]:
+                # Verifica se é uma peça dupla (left == right)
+                if piece.left == piece.right:
+                    if piece.left > highest_double:
+                        highest_double = piece.left
+                        starting_player_index = i
+        
+        # Se ninguém tem dupla, o primeiro jogador começa (fallback)
+        return starting_player_index
 
     def get_current_player_id(self) -> Optional[str]:
         """Retorna o ID do jogador atual"""
@@ -268,6 +288,11 @@ class DominoGame:
         if player_id not in self.players:
             return {}
 
+        # Encontra a maior dupla para mostrar no início do jogo
+        starting_info = None
+        if self.game_started and len(self.board) == 0:
+            starting_info = self.get_starting_player_info()
+
         return {
             "room_code": self.room_code,
             "players": {
@@ -283,5 +308,31 @@ class DominoGame:
             "game_started": self.game_started,
             "game_finished": self.game_finished,
             "winner": self.players[self.winner]["name"] if self.winner else None,
-            "pool_count": len(self.dominoes_pool)
+            "pool_count": len(self.dominoes_pool),
+            "starting_info": starting_info
+        }
+
+    def get_starting_player_info(self) -> Optional[Dict]:
+        """Retorna informações sobre o jogador inicial e sua maior dupla"""
+        player_ids = list(self.players.keys())
+        current_player_id = self.get_current_player_id()
+        
+        if not current_player_id:
+            return None
+            
+        highest_double = -1
+        for piece in self.players[current_player_id]["hand"]:
+            if piece.left == piece.right and piece.left > highest_double:
+                highest_double = piece.left
+        
+        if highest_double >= 0:
+            return {
+                "player_name": self.players[current_player_id]["name"],
+                "highest_double": highest_double,
+                "message": f"{self.players[current_player_id]['name']} inicia com a dupla [{highest_double}|{highest_double}]"
+            }
+        
+        return {
+            "player_name": self.players[current_player_id]["name"],
+            "message": f"{self.players[current_player_id]['name']} inicia o jogo"
         }
