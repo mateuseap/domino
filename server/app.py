@@ -189,6 +189,41 @@ def handle_buy_piece(data):
     for player_id in game.players:
         game_state = game.get_game_state(player_id)
         emit('game_update', game_state, room=player_id)
+        
+    # Verifica se o jogo está bloqueado após a compra
+    if result.get('game_blocked'):
+        emit('game_finished', {
+            'winner': result['winner'],
+            'message': f'{result["winner"]} venceu! (Jogo bloqueado - menor pontuação)'
+        }, room=room_code)
+
+@socketio.on('pass_turn')
+def handle_pass_turn(data):
+    """Jogador passa a vez"""
+    room_code = data.get('room_code')
+
+    if room_code not in games:
+        emit('error', {'message': 'Sala não encontrada'})
+        return
+
+    game = games[room_code]
+    result = game.pass_turn(request.sid)
+
+    if not result['success']:
+        emit('error', {'message': result['message']})
+        return
+
+    # Atualiza estado para todos os jogadores
+    for player_id in game.players:
+        game_state = game.get_game_state(player_id)
+        emit('game_update', game_state, room=player_id)
+        
+    # Verifica se o jogo está bloqueado
+    if result.get('game_blocked'):
+        emit('game_finished', {
+            'winner': result['winner'],
+            'message': f'{result["winner"]} venceu! (Jogo bloqueado - menor pontuação)'
+        }, room=room_code)
 
 @socketio.on('get_game_state')
 def handle_get_game_state(data):
