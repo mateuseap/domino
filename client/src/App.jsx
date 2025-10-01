@@ -48,6 +48,7 @@ function App() {
   const [selectedPiece, setSelectedPiece] = useState(null);
   const [showSideChoice, setShowSideChoice] = useState(false);
   const [startingInfo, setStartingInfo] = useState(null);
+  const [requiredDouble, setRequiredDouble] = useState(null);
 
   useEffect(() => {
     const newSocket = io(API_URL);
@@ -81,6 +82,7 @@ function App() {
       setPlayers(data.players);
       setPoolCount(data.pool_count);
       setStartingInfo(data.starting_info);
+      setRequiredDouble(data.required_double);
       
       // Mensagem personalizada baseada em quem inicia
       if (data.starting_info) {
@@ -97,6 +99,7 @@ function App() {
       setPlayers(data.players);
       setPoolCount(data.pool_count);
       setStartingInfo(data.starting_info);
+      setRequiredDouble(data.required_double);
       
       if (data.game_finished) {
         setGameState('finished');
@@ -174,6 +177,11 @@ function App() {
   };
 
   const canPlayPiece = (piece) => {
+    // Se é a primeira jogada e há uma dupla obrigatória
+    if (board.length === 0 && requiredDouble !== null) {
+      return piece.left === piece.right && piece.left === requiredDouble;
+    }
+    
     if (board.length === 0) return true;
     const leftEnd = board[0].left;
     const rightEnd = board[board.length - 1].right;
@@ -309,7 +317,7 @@ function App() {
   }
 
   // Componente de Peça de Dominó
-  const DominoPiece = ({ piece, onClick, disabled, isHorizontal = true }) => {
+  const DominoPiece = ({ piece, onClick, disabled, isHorizontal = true, className = '' }) => {
     const containerClass = isHorizontal 
       ? 'w-20 h-10 flex-row' 
       : 'w-10 h-20 flex-col';
@@ -320,7 +328,7 @@ function App() {
         disabled={disabled}
         className={`${containerClass} bg-white border-4 border-gray-800 rounded-lg flex items-center justify-around p-1 ${
           disabled ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 hover:shadow-xl cursor-pointer transform transition-all'
-        }`}
+        } ${className}`}
       >
         <DominoDots value={piece.left} />
         <div className={isHorizontal ? 'w-0.5 h-full bg-gray-800' : 'h-0.5 w-full bg-gray-800'}></div>
@@ -341,11 +349,13 @@ function App() {
                 <h2 className="text-2xl font-bold text-gray-800">Sala: {roomCode}</h2>
                 <p className="text-sm text-gray-600">
                   {isMyTurn() ? 
-                    (myHand.some(piece => canPlayPiece(piece)) ? 
-                      '🟢 Seu turno! Escolha uma peça para jogar' : 
-                      poolCount > 0 ? 
-                        '🔄 Comprando peças automaticamente...' : 
-                        '⏭️ Passando vez automaticamente...'
+                    (board.length === 0 && requiredDouble !== null ? 
+                      `🎯 Jogue a dupla [${requiredDouble}|${requiredDouble}] para começar!` :
+                      myHand.some(piece => canPlayPiece(piece)) ? 
+                        '🟢 Seu turno! Escolha uma peça para jogar' : 
+                        poolCount > 0 ? 
+                          '🔄 Comprando peças automaticamente...' : 
+                          '⏭️ Passando vez automaticamente...'
                     ) : 
                     '🔴 Aguardando oponente...'
                   }
@@ -414,14 +424,29 @@ function App() {
             <h3 className="text-gray-800 text-lg font-bold mb-4">Sua Mão ({myHand.length} peças)</h3>
             
             <div className="flex flex-wrap gap-4 justify-center mb-4">
-              {myHand.map((piece, idx) => (
-                <DominoPiece
-                  key={idx}
-                  piece={piece}
-                  onClick={selectPiece}
-                  disabled={!isMyTurn() || gameState === 'finished' || !canPlayPiece(piece)}
-                />
-              ))}
+              {myHand.map((piece, idx) => {
+                const isRequired = board.length === 0 && requiredDouble !== null && 
+                                 piece.left === piece.right && piece.left === requiredDouble;
+                const canPlay = canPlayPiece(piece);
+                
+                return (
+                  <div key={idx} className="relative">
+                    {isRequired && (
+                      <div className="absolute -top-2 -right-2 z-10">
+                        <span className="bg-yellow-500 text-white text-xs font-bold px-2 py-1 rounded-full animate-pulse">
+                          OBRIGATÓRIA!
+                        </span>
+                      </div>
+                    )}
+                    <DominoPiece
+                      piece={piece}
+                      onClick={selectPiece}
+                      disabled={!isMyTurn() || gameState === 'finished' || !canPlay}
+                      className={isRequired ? 'ring-4 ring-yellow-400 ring-opacity-75 animate-pulse' : ''}
+                    />
+                  </div>
+                );
+              })}
             </div>
 
 
