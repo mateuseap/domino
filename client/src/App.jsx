@@ -47,6 +47,7 @@ function App() {
   const [poolCount, setPoolCount] = useState(0);
   const [selectedPiece, setSelectedPiece] = useState(null);
   const [showSideChoice, setShowSideChoice] = useState(false);
+  const [startingInfo, setStartingInfo] = useState(null);
 
   useEffect(() => {
     const newSocket = io(API_URL);
@@ -79,7 +80,14 @@ function App() {
       setCurrentPlayer(data.current_player);
       setPlayers(data.players);
       setPoolCount(data.pool_count);
-      setMessage('Jogo iniciado! Boa sorte!');
+      setStartingInfo(data.starting_info);
+      
+      // Mensagem personalizada baseada em quem inicia
+      if (data.starting_info) {
+        setMessage(data.starting_info.message);
+      } else {
+        setMessage('Jogo iniciado! Boa sorte!');
+      }
     });
 
     newSocket.on('game_update', (data) => {
@@ -88,6 +96,7 @@ function App() {
       setCurrentPlayer(data.current_player);
       setPlayers(data.players);
       setPoolCount(data.pool_count);
+      setStartingInfo(data.starting_info);
       
       if (data.game_finished) {
         setGameState('finished');
@@ -214,8 +223,8 @@ function App() {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
-          <h1 className="text-4xl font-bold text-center mb-2 text-gray-800">🎲 Dominó</h1>
-          <p className="text-center text-gray-600 mb-8">Multiplayer Online</p>
+          <h1 className="text-4xl font-bold text-center mb-2 text-gray-800">Dominó da Hellen! 🤠</h1>
+          <p className="text-center text-gray-600 mb-8">Venha ser um tonhão</p>
 
           <input
             type="text"
@@ -354,6 +363,19 @@ function App() {
                 <p className="text-xs text-gray-500 mt-1">Pool: {poolCount} peças</p>
               </div>
             </div>
+
+            {startingInfo && board.length === 0 && (
+              <div className="mt-2 p-3 bg-purple-100 border-2 border-purple-300 rounded-lg text-center">
+                <p className="text-purple-800 font-semibold">
+                  🎯 {startingInfo.message}
+                </p>
+                {startingInfo.highest_double !== undefined && (
+                  <p className="text-purple-600 text-sm mt-1">
+                    Maior peça dupla na mesa!
+                  </p>
+                )}
+              </div>
+            )}
 
             {message && (
               <div className="mt-2 p-2 bg-blue-100 border border-blue-300 rounded text-blue-800 text-sm">
